@@ -1,10 +1,10 @@
-<<<<<<< HEAD
-====
-pydsge
+=======
+# pydsge
+DSGE parser and solver in Python
 ====
 A simple Python (3+) package for Dynamic Stochastic General Equilibrium (DSGE) models.
 
-This originally is a fork of Ed Herbst's fork from Pablo Winant's (excellent) package dolo. 
+This originally is a fork of Ed Herbst's fork from Pablo Winant's (excellent) package dolo. I was using this version because I seemed slightly easier to obtain the matrices I was looking for than in the up-to-date and more advanced version of dolo.
 
 See [https://github.com/EconForge/dolo] and [https://github.com/eph].
 
@@ -16,7 +16,4 @@ In the directory, run
 ```bash
 pip install .
 ```
-=======
-# pydsge
-DSGE parser and solver in Python
->>>>>>> 0f56279dc495d273a19efdf3abc65f1edc198d28
+
