@@ -256,33 +256,35 @@ class DSGE(dict):
         PPI  = zeros(svar, rvar)
 
         ## ->
-        varl    = self['var_ordering']
-        fvarl   = self['fvars']
+        sub_var    = self['var_ordering']
+        fvarl    = [l(+1) for l in sub_var]
         lvarl   = self['lvars']
-        svarl   = [l for l in varl if l not in [l(+1) for l in lvarl] and l not in [l(-1) for l in fvarl]]
-        fvar_ll     = [l(-1) for l in fvarl]
-        # print(lvarl)
-        # print([l(+1) for l in lvarl])
-        print(varl)
-        print(fvarl)
-        print(fvar_ll)
-        print(svarl)
-        print(lvarl)
-        print(fvar_ll + svarl + lvarl)
-        # print([l for l in varl if l not in [l(+1) for l in lvarl]] + lvarl)
+        lvarl_ff    = [l(+1) for l in lvarl]
 
-
-        no_var      = len(varl)
-        no_fvar     = len(fvarl)
+        no_var      = len(sub_var)
         no_lvar     = len(lvarl)
 
-        AAA  = zeros(no_var, no_fvar)
-        BBB  = zeros(no_var, no_var)
-        CCC  = zeros(no_var, no_lvar)
-        # print(
-            # self['var_ordering'],
-            # self['fvars'],
-            # self['lvars'])
+        ## diese beiden loops kann man noch vereinen
+        selector    = []
+        for v in lvarl_ff:
+            selector.append(sub_var.index(v))
+
+        II      = np.zeros((no_lvar, no_var))
+        for i in range(no_lvar):
+            II[i,selector[i]] = 1
+
+        info_vec    = { 'variables': sub_var,
+                        'forward_looking': self['fvars'],
+                        'backward_looking': lvarl,
+                        'selector': selector,   # ist hinfällig
+                        'II': II,
+                        'numbers': (no_lvar, no_var) }
+
+
+
+        AA  = zeros(no_var, no_var)
+        BB  = zeros(no_var, no_var)
+        CC  = zeros(no_var, no_lvar)
         ## <-
 
         eq_i = 0
@@ -292,20 +294,19 @@ class DSGE(dict):
 
             for v in A_var:
                 v_j = fvarl.index(v)
-                AAA[eq_i, v_j] = -(eq).set_eq_zero.diff(v).subs(subs_dict)
+                AA[eq_i, v_j] = -(eq).set_eq_zero.diff(v).subs(subs_dict)
 
             B_var = filter(lambda x: x.date == 0, eq.atoms(Variable))
 
             for v in B_var:
-                v_j = varl.index(v)
-                BBB[eq_i, v_j] = -(eq).set_eq_zero.diff(v).subs(subs_dict)
+                v_j = sub_var.index(v)
+                BB[eq_i, v_j] = -(eq).set_eq_zero.diff(v).subs(subs_dict)
 
             C_var = filter(lambda x: x.date < 0, eq.atoms(Variable))
-            # C_var = filter(lambda x: x in lvarl, eq.atoms())
 
             for v in C_var:
                 v_j = lvarl.index(v)
-                CCC[eq_i, v_j] = eq.set_eq_zero.diff(v).subs(subs_dict)
+                CC[eq_i, v_j] = eq.set_eq_zero.diff(v).subs(subs_dict)
 
             eq_i += 1
             ## <-
@@ -358,7 +359,8 @@ class DSGE(dict):
             QQ = self['covariance']
             HH = self['measurement_errors']
             # return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH
-            return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH, AAA, BBB, CCC
+            return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH, AA, BB, CC
+
         #print ""
         from collections import OrderedDict
         subs_dict = []
@@ -391,9 +393,9 @@ class DSGE(dict):
         PPI = lambdify([self.parameters+self['other_para']], PPI)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
 
         ## ->
-        AAA = lambdify([self.parameters+self['other_para']], AAA)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
-        BBB = lambdify([self.parameters+self['other_para']], BBB)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
-        CCC = lambdify([self.parameters+self['other_para']], CCC)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
+        AA = lambdify([self.parameters+self['other_para']], AA)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
+        BB = lambdify([self.parameters+self['other_para']], BB)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
+        CC = lambdify([self.parameters+self['other_para']], CC)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
         ## <-
 
         psi = lambdify([self.parameters], [ss[str(px)] for px in self['other_para']])#, modules=context_f)
@@ -409,9 +411,10 @@ class DSGE(dict):
         self.PPI = add_para_func(PPI)
 
         ## ->
-        self.AAA = add_para_func(AAA)
-        self.BBB = add_para_func(BBB)
-        self.CCC = add_para_func(CCC)
+        self.AA = add_para_func(AA)
+        self.BB = add_para_func(BB)
+        self.CC = add_para_func(CC)
+        self.info_vec   = info_vec
         ## <-
 
         QQ = self['covariance'].subs(subs_dict)
@@ -431,7 +434,7 @@ class DSGE(dict):
         self.HH = add_para_func(HH)
 
         # return GAM0, GAM1, PSI, PPI
-        return GAM0, GAM1, PSI, PPI, AAA, BBB, CCC
+        return GAM0, GAM1, PSI, PPI, AA, BB, CC, info_vec
 
     def compile_model(self):
         self.python_sims_matrices()
@@ -441,9 +444,9 @@ class DSGE(dict):
         PSI = self.PSI
         PPI = self.PPI
 
-        AAA = self.AAA
-        BBB = self.BBB
-        CCC = self.CCC
+        # AA = self.AA
+        # BB = self.BB
+        # CC = self.CC
 
         QQ = self.QQ
         DD = self.DD
