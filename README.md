@@ -1,6 +1,6 @@
-<<<<<<< HEAD
-====
-pydsge
+=======
+# pydsge
+DSGE parser and solver in Python
 ====
 A simple Python (3+) package for Dynamic Stochastic General Equilibrium (DSGE) models.
 
@@ -16,7 +16,4 @@ In the directory, run
 ```bash
 pip install .
 ```
-=======
-# pydsge
-DSGE parser and solver in Python
->>>>>>> 0f56279dc495d273a19efdf3abc65f1edc198d28
+
