@@ -162,13 +162,7 @@ class DSGE(dict):
         else:
             self['perturb_eq'] = self['equations']
 
-        # context = [(s.name, s) for s in self['par_ordering']+self['var_ordering']+self['shk_ordering']+self['para_func']]
-        # context = dict(context)
-        # context['log'] = sympy.log
-        # context['exp'] = sympy.exp
         context = {}
-        #self['pertub_eq'] = EquationList(self['perturb_eq'], context)
-
 
         return
 
@@ -182,6 +176,14 @@ class DSGE(dict):
     @property
     def variables(self):
         return self['var_ordering']
+
+    @property
+    def const_var(self):
+        return self['const_var']
+
+    @property
+    def const_eq(self):
+        return self['const_eq']
 
     @property
     def parameters(self):
@@ -273,19 +275,30 @@ class DSGE(dict):
         for i in range(no_lvar):
             II[i,selector[i]] = 1
 
-        info_vec    = { 'variables': sub_var,
-                        'forward_looking': self['fvars'],
-                        'backward_looking': lvarl,
-                        'selector': selector,   # ist hinfällig
+        info_vec    = { 'var': sub_var,
+                        'fvar': self['fvars'],
+                        'bvar': lvarl,
+                        'full_var': sub_var + lvarl,
                         'II': II,
-                        'numbers': (no_lvar, no_var) }
+                        'nums': (no_lvar, no_var) }
 
-
-
-        AA  = zeros(no_var, no_var)
-        BB  = zeros(no_var, no_var)
-        CC  = zeros(no_var, no_lvar)
         ## <-
+        cc  = zeros(1, no_var+no_lvar)
+
+        if self['const_var']:
+            AA  = zeros(no_var-1, no_var)
+            BB  = zeros(no_var-1, no_var)
+            CC  = zeros(no_var-1, no_lvar)
+            cc_var = filter(lambda x: x.date <= 0, self['const_eq'].atoms(Variable))
+
+            for v in cc_var:
+                v_j = sub_var.index(v)
+                cc[v_j] = -(self['const_eq']).set_eq_zero.diff(v).subs(subs_dict)
+        else:
+            AA  = zeros(no_var, no_var)
+            BB  = zeros(no_var, no_var)
+            CC  = zeros(no_var, no_lvar)
+
 
         eq_i = 0
         for eq in self['perturb_eq']:
@@ -311,6 +324,8 @@ class DSGE(dict):
             eq_i += 1
             ## <-
 
+        """     
+        ## save some time
         eq_i = 0
         for eq in eq_cond:
 
@@ -338,6 +353,8 @@ class DSGE(dict):
 
             eq_i += 1
             #print "\r Differentiating equation {0} of {1}.".format(eq_i, len(eq_cond)),
+        """
+
         DD = zeros(ovar, 1)
         ZZ = zeros(ovar, svar)
 
@@ -359,7 +376,7 @@ class DSGE(dict):
             QQ = self['covariance']
             HH = self['measurement_errors']
             # return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH
-            return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH, AA, BB, CC
+            return GAM0, GAM1, PSI, PPI, QQ, DD, ZZ, HH, AA, BB, CC, cc
 
         #print ""
         from collections import OrderedDict
@@ -396,6 +413,7 @@ class DSGE(dict):
         AA = lambdify([self.parameters+self['other_para']], AA)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
         BB = lambdify([self.parameters+self['other_para']], BB)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
         CC = lambdify([self.parameters+self['other_para']], CC)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
+        cc = lambdify([self.parameters+self['other_para']], cc)#, modules={'ImmutableDenseMatrix': np.array})#'numpy')
         ## <-
 
         psi = lambdify([self.parameters], [ss[str(px)] for px in self['other_para']])#, modules=context_f)
@@ -414,6 +432,7 @@ class DSGE(dict):
         self.AA = add_para_func(AA)
         self.BB = add_para_func(BB)
         self.CC = add_para_func(CC)
+        self.cc = add_para_func(cc)
         self.info_vec   = info_vec
         ## <-
 
@@ -434,7 +453,7 @@ class DSGE(dict):
         self.HH = add_para_func(HH)
 
         # return GAM0, GAM1, PSI, PPI
-        return GAM0, GAM1, PSI, PPI, AA, BB, CC, info_vec
+        return GAM0, GAM1, PSI, PPI, AA, BB, CC, cc
 
     def compile_model(self):
         self.python_sims_matrices()
@@ -443,10 +462,6 @@ class DSGE(dict):
         GAM1 = self.GAM1
         PSI = self.PSI
         PPI = self.PPI
-
-        # AA = self.AA
-        # BB = self.BB
-        # CC = self.CC
 
         QQ = self.QQ
         DD = self.DD
@@ -482,7 +497,7 @@ class DSGE(dict):
         #if self.GAM0 == None:
         self.python_sims_matrices()
 
-        from gensys import gensys_wrapper as gensys
+        from .gensys import gensys_wrapper as gensys
 
         G0 = self.GAM0(*p0)
         G1 = self.GAM1(*p0)
@@ -519,11 +534,13 @@ class DSGE(dict):
         par_ordering = [Parameter(v) for v in dec['parameters']]
         shk_ordering = [Shock(v) for v in dec['shocks']]
 
-
         if 'para_func' in dec:
             other_para   = [Parameter(v) for v in dec['para_func']]
         else:
             other_para = []
+
+        context = [(s.name,s) for s in var_ordering + par_ordering + shk_ordering + other_para]
+        context = dict(context)
 
         if 'observables' in dec:
             observables = [Variable(v) for v in dec['observables']]
@@ -532,11 +549,31 @@ class DSGE(dict):
             observables = []
             obs_equations = dict()
 
+        if 'constrained' in dec:
+            c_var        = [Variable(v) for v in dec['constrained']]
+            raw_const        = model_yaml['equations']['constraint'][0]     # only one constraint allowed
+
+            if '=' in raw_const:
+                lhs, rhs = str.split(raw_const, '=')
+            else:
+                lhs, rhs = raw_const, '0'
+
+            try:
+                lhs = eval(lhs, context)
+                rhs = eval(rhs, context)
+            except TypeError as e:
+                print('While parsing %s, got this error: %s' % (raw_const, repr(e)))
+                return
+
+            const_eq    = Equation(lhs, rhs)
+        else:
+            c_var        = []
+            const_eq        = dict()
+
         if 'measurement_errors' in dec:
             measurement_errors = [Shock(v) for v in dec['measurement_errors']]
         else:
             measurement_errors = None
-
 
         if 'make_log' in dec:
             make_log = [Variable(v) for v in dec['make_log']]
@@ -545,9 +582,6 @@ class DSGE(dict):
 
         steady_state = [0]
         init_values = [0]
-
-        context = [(s.name,s) for s in var_ordering + par_ordering + shk_ordering + other_para]
-        context = dict(context)
 
         for f in [sympy.log, sympy.exp,
                   sympy.sin, sympy.cos, sympy.tan,
@@ -581,8 +615,6 @@ class DSGE(dict):
                 return
 
             equations.append(Equation(lhs, rhs))
-
-
 
         #------------------------------------------------------------
         # Figure out max leads and lags
@@ -708,6 +740,8 @@ class DSGE(dict):
 
         model_dict = {
             'var_ordering': var_ordering,
+            'const_var': c_var,
+            'const_eq': const_eq,
             'par_ordering': par_ordering,
             'shk_ordering': shk_ordering,
             'other_parameters': other_para,
