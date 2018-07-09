@@ -284,6 +284,16 @@ class DSGE(dict):
 
         ## <-
         cc  = zeros(1, no_var+no_lvar)
+        
+        ## potentially for adding lags
+        # lvar_names  =     [ i.name for i in self['lvars']]
+        # toblag      = [ v for v in self['fvars'] if v.name in lvar_names ]
+
+        # self['aux_vars'] = [Parameter(f.name + '_LAG') for f in toblag]
+
+        # subs_lags  = dict()
+        # subs_lags.update( {v:vlag for v,vlag in zip(toblag,self['aux_vars']) })
+
 
         if self['const_var']:
             AA  = zeros(no_var-1, no_var)
